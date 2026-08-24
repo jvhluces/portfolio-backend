@@ -2,19 +2,20 @@ from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
+import resend # <- DINAGDAG KO TO
 
 app = FastAPI()
 
 # PAYAGAN NATIN YUNG PORTFOLIO WEBSITE MO NA MAG REQUEST
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Pag naka deploy na, palitan mo ng "https://janineluces.github.io"
+    allow_origins=["https://jvhluces.github.io"], # Ginawa ko na specific
     allow_methods=["POST"],
+    allow_headers=["*"],
 )
 
-# ITO YUNG EMAIL MO NA PADADALHAN NG MESSAGE
-YOUR_EMAIL = os.getenv("YOUR_EMAIL", "janineluces49@gmail.com")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+# GINAMIT NA NATIN RESEND IMbes NA GMAIL
+resend.api_key = os.getenv("RESEND_API_KEY") # <- ITO YUNG ILALAGAY MO SA RENDER
 
 @app.post("/contact")
 async def contact_form(
@@ -22,47 +23,40 @@ async def contact_form(
     email: str = Form(...),
     message: str = Form(...)
 ):
-    # TEMPORARY: PRINT LANG MUNA SA LOGS
+    # Print sa Render Logs para macheck
     print("================== BAGONG MESSAGE ==================")
     print(f"Name: {name}")
     print(f"Email: {email}")
     print(f"Message: {message}")
     print("====================================================")
-    
-    # Pag wala kang EMAIL_PASSWORD, ito yung irereply
-    if not EMAIL_PASSWORD:
+
+    if not resend.api_key:
         return JSONResponse(
-            status_code=200, # ginawa kong 200 para di mag error sa frontend
-            content={"message": "Message received! Check Render Logs muna kasi walang email setup."},
+            status_code=503,
+            content={"message": "Email service is not configured on the server."},
         )
 
-    # ITO YUNG TUNAY NA EMAIL SENDER - gagana lang pag may App Password ka na
     try:
-        import smtplib
-        from email.mime.text import MIMEText
+        # SEND EMAIL GAMIT SI RESEND
+        params = {
+            "from": "Portfolio <onboarding@resend.dev>", # test email muna
+            "to": ["janineluces49@gmail.com"], # EMAIL MO DITO
+            "subject": f"New Portfolio Message from {name}",
+            "html": f"""
+            <h2>May bagong message sa Portfolio mo!</h2>
+            <p><b>From:</b> {name}</p>
+            <p><b>Email:</b> {email}</p>
+            <p><b>Message:</b><br>{message}</p>
+            """
+        }
         
-        subject = f"New Portfolio Message from {name}"
-        body = f"""
-        Name: {name}
-        Email: {email}
-        Message: {message}
-        """
+        resend.Emails.send(params)
         
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = YOUR_EMAIL
-        msg["Reply-To"] = email
-        msg["To"] = YOUR_EMAIL
-        
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(YOUR_EMAIL, EMAIL_PASSWORD)
-            server.sendmail(YOUR_EMAIL, [YOUR_EMAIL], msg.as_string())
-            
         return JSONResponse(content={"message": "Email sent successfully!"})
-
+        
     except Exception as e:
         print(f"EMAIL ERROR: {e}")
         return JSONResponse(
             status_code=500,
-            content={"message": "Failed to send email. Check if App Password is correct."},
+            content={"message": "Failed to send email. Check Resend API Key."},
         )
